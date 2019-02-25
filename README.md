@@ -15,3 +15,5 @@ for now there's only two players.
 the first player can be rolled with the __arrow keys__, and jump with __space__
 
 the second is moved by __WASD__, and jump with __Q__
+
+play at https://zalavariandris.github.io/SumoBall-HTML5/
