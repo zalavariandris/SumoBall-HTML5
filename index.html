@@ -1,0 +1,452 @@
+<html>
+	<head>
+		<style>
+
+			body{
+				padding: 0px;
+				margin: 0px;
+				font-family: monospace;
+				color: white;
+				font-size:10px;
+				background-color: #252525;
+			}
+			#container{
+				position: absolute;
+				top: 0;
+				left: 0;
+				width: 100%;
+				height: 100%;
+			}
+
+			 #container canvas{
+				position: absolute;
+				width: 100%;
+				height: 100%;
+			}
+
+			.scoreBoard{
+				position: absolute;
+				top: 0;
+
+				color: white;
+
+
+    			display: flex;
+    			width: 100%;
+    			justify-content: center;
+			}
+
+			.scoreBoard div{
+				margin: 5px 0px;
+				padding: 5px;
+
+				display: flex;
+				justify-content: center; /* align horizontal */
+				align-items: center; /* align vertical */
+			}
+
+
+			.scoreBoard .score{
+				background: white;
+				width: 30px;
+				height: 30px;
+				font-size: 25px;
+			}
+
+			.scoreBoard #poster{
+				text-align: center;
+			    width: 13%;
+			    background: #424242;
+			    margin: 12px 0px;
+
+			}
+
+			#about{
+				position: absolute;
+				margin:10px 10px;
+			    max-width: 33%;
+    			cursor: pointer;
+			}
+
+			#about .content{
+				display: none;
+			}
+			#about:hover .content{
+				display: block;
+			}
+
+			#about>a{
+				    font-weight: bold;
+    font-size: 16px;
+
+			}
+
+		</style>
+	</head>
+	<body>
+		<div id="container">
+		</div>
+
+
+
+		<div class="scoreBoard">
+			<div class="score" id="player2ScoreBoard">0</div>
+			<div id="poster">SumoBall</div>
+			<div class="score" id="player1ScoreBoard">0</div>
+		</div>
+
+			<div id="about">
+			<a>?</a>
+			<div class="content">
+				<h2>About</h2>
+				<p>
+					I wrote this game when I was a kid in DarkBasic. Since the original was lost a long time ago, and I always wanted to rewrite it, I decided to make it in javascript this time. It was such a fun to play with friends, and see others playing with this game. Back then I used a simple custom physics engine. I choosed physjs this time, so it could be extended to more complex environments. It use to have the option for more players, that is missing now, but might implement it later.
+				</p>
+					<h3>Todo</h3>
+					<ul>
+					<li>more players</li>
+					<li>color selector</li>
+					<li>online multiplayer?</li>
+					</ul>
+				
+				<h2>Controlls</h2>
+				<p>for now there's only two players.<br>
+				the first player can be rolled with the <strong>arrow keys</strong>, and jump with <strong>space</strong><br>
+				the second is moved by <strong>WASD</strong>, and jump with <strong>Q</strong>
+			</p>
+			</div>
+		</div>
+
+
+
+		<script src="https://fastcdn.org/three.js/73/three.min.js"></script>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
+
+		<script>
+			class Player{
+				constructor(position, color, controls, material){
+					// visual
+		            this.mesh = new THREE.Mesh( 
+						new THREE.SphereBufferGeometry( 0.5, 32, 32 ), 
+						new THREE.MeshPhongMaterial( {color: color} )
+					);
+
+					this.mesh.position.set(position.x, position.y, position.z);
+					this.mesh.castShadow = true;
+					this.mesh.receiveShadow = true;
+
+					// physics
+	            	this.body = new CANNON.Body({
+	            		mass: 1, 
+	            		shape: new CANNON.Sphere(0.5),
+	            		material: material
+	            	});
+
+	            	
+					this.body.position.set(this.mesh.position.x, this.mesh.position.y, this.mesh.position.z);
+
+					// vars
+					this.controls = controls;
+					this.grounded = false;
+					this.score = 0;
+					this.color = color
+				}
+
+				animate(viewer){
+					// Control
+					let axis = {
+						horizontal: 0,
+						vertical: 0
+					};
+
+					if(Input.instance().keyDown(this.controls.up))
+						axis.vertical+=1;
+					if(Input.instance().keyDown(this.controls.left))
+						axis.horizontal-=1;
+					if(Input.instance().keyDown(this.controls.down))
+						axis.vertical-=1;
+					if(Input.instance().keyDown(this.controls.right))
+						axis.horizontal+=1;
+					
+					// find out input world direction
+					let forward = viewer.camera.camera.getWorldDirection();
+					let right = new THREE.Vector3( 1, 0, 0 );
+					right.applyQuaternion(viewer.camera.camera.quaternion);
+
+					let direction = right.projectOnPlane(new THREE.Vector3(0,1,0)).multiplyScalar(axis.horizontal).add(
+						forward.projectOnPlane(new THREE.Vector3(0,1,0)).multiplyScalar(axis.vertical));
+					direction.normalize()
+
+					// Physics
+					var worldPoint = new CANNON.Vec3(0,0,0);
+					let strength = 60;
+		            var force = new CANNON.Vec3(direction.x,direction.y,direction.z).mult(strength);
+		            this.body.applyForce(force, worldPoint);
+
+		            // apply jump force to body
+		            if(Input.instance().keyDown(this.controls.jump) && this.grounded){
+		            	this.body.applyForce(new CANNON.Vec3(0,600,0), new CANNON.Vec3(0,0,0));
+		            }
+
+		            // Sync visual
+					this.mesh.position.set(
+						this.body.position.x, 
+						this.body.position.y, 
+						this.body.position.z
+					);				
+				}
+			}
+
+			class Camera{
+				constructor(width, height){
+					this.camera = new THREE.PerspectiveCamera(27, width/height, 0.01, 100 )
+					this.camera.position.set(0,20,40);
+				}
+
+				animate(){
+					let speed = 0.3; // rpm
+					let distance = 43;
+
+					this.camera.position.x = Math.sin(Date.now()*Math.PI*2*speed*0.001/60) * distance;
+					this.camera.position.z = Math.cos(Date.now()*Math.PI*2*speed*0.001/60) * distance;
+
+					this.camera.lookAt(new THREE.Vector3(0,2.5,0));
+				}
+			}
+
+			class Input {
+				constructor(){
+					if(!Input._instance){
+						this._keysDown = {};
+						Input._instance = this;
+						this.setupEventListeners();
+					}
+					return Input._instance;
+				}
+
+				setupEventListeners(){
+					// handle key events
+					window.addEventListener('keydown', 
+						(event) => this._keysDown[event.keyCode] = true);
+
+					window.addEventListener('keyup', 
+						(event)=> delete this._keysDown[event.keyCode]);
+
+					window.addEventListener('blur', 
+						(event)=>this._keysDown = {});
+				}
+
+				static instance(){
+					if(!Input._instance){
+						return new Input();
+					}else{
+						return Input._instance
+					}
+				}
+
+				keyDown(key){
+					if(this._keysDown[key] == true)
+						return true;
+					else
+						return false;
+				}
+			}
+
+
+			class Viewer{
+				constructor(element){
+					/* 
+					* THREE
+					*/
+					this.element = element;
+					this.renderer = new THREE.WebGLRenderer({antialias: true, alpha:true});
+					this.element.append(this.renderer.domElement);
+					this.renderer.shadowMap.enabled = true;
+
+	            	/*
+	            	 * Physics
+	            	 */
+	            	this.world = new CANNON.World();
+	            	this.world.gravity.set(0,-140.2, 0);
+	            	this.world.broadphase = new CANNON.NaiveBroadphase();
+					this.world.solver.iterations = 32
+
+					// setup scene
+					this.scene = new THREE.Scene;
+					let width = element.offsetWidth;
+	            	let height = element.soffsetHeight;
+
+	            	this.camera = new Camera(width, height);
+	            	
+
+	            	// POPULATE SCENE
+	            	// grid
+					let grid = new THREE.GridHelper(13.0, 2);
+
+					// lights
+					this.sun = new THREE.SpotLight( 0xffffff, 1, 150 );
+	            	this.sun.position.set(0, 25, 0);
+	            	this.sun.castShadow = true
+					this.sun.shadow.mapSize.width = 512;  // default
+					this.sun.shadow.mapSize.height = 512; // default
+					this.sun.shadow.camera.near = 0.5;    // default
+					this.sun.shadow.camera.far = 100      // default
+	            	
+	            	//this.scene.add(grid);
+	            	this.scene.add(this.sun);
+
+
+	            	//ambient
+	            	this.ambient = new THREE.AmbientLight( new THREE.Color(0.5, 0.5, 0.5) ); // soft white light
+					this.scene.add( this.ambient );
+	            	// Platform
+	            	// - threejs
+	            	this.platform = {
+	            		mesh: new THREE.Mesh( 
+							new THREE.BoxGeometry( 20, 1, 20 ), 
+							new THREE.MeshPhongMaterial( {color: "grey"} )
+						),
+						body: new CANNON.Body({ 
+							mass: 0, 
+							shape: new CANNON.Box(new CANNON.Vec3(10,0.5,10)) , 
+							material: new CANNON.Material("groundMaterial")
+						})
+	            	}
+					this.platform.mesh.receiveShadow = true;
+					this.scene.add( this.platform.mesh );
+
+					
+					this.world.add(this.platform.body);
+
+
+	            	// Players
+	            	let playerMaterial = new CANNON.Material("playerMaterial");
+	            	this.player1 = new Player(
+	            		new THREE.Vector3(-2.5, 2.5, 0), 
+	            		"orange",
+	            		{
+	            			'up': 87,
+	            			'left': 65,
+	            			'down': 83,
+	            			'right': 68,
+	            			'jump': 81
+	            		},
+	            		playerMaterial
+	            	);
+	            	this.scene.add(this.player1.mesh);
+	            	this.world.add(this.player1.body);
+
+	            	this.player2 = new Player(
+	            		new THREE.Vector3(+2.5, 2.5, 0), 
+	            		"cyan",
+	            		{
+	            			'up': 38,
+	            			'left': 37,
+	            			'down': 40,
+	            			'right': 39,
+	            			'jump': 32
+	            		},
+	            		playerMaterial
+	            	);
+	            	this.scene.add(this.player2.mesh);
+	            	this.world.add(this.player2.body);
+
+	            	// Adjust constraint equation parameters for ground/ground contact
+			        var ground_player_cm = new CANNON.ContactMaterial(
+			        	playerMaterial, this.platform.body.material, {
+			            friction: 0,
+			            restitution: 0.3,
+			            // contactEquationStiffness: 1e8,
+			            // contactEquationRelaxation: 3
+			        });
+			        
+			        var player_player_cm = new CANNON.ContactMaterial(
+			        	playerMaterial, playerMaterial, {
+						friction: 0,
+			            restitution: 2,
+			            // contactEquationStiffness: 1e8,
+			            // contactEquationRelaxation: 3
+			        });
+			        this.world.addContactMaterial(ground_player_cm);
+			        this.world.addContactMaterial(player_player_cm);
+
+					// setup UI
+					document.getElementById("player1ScoreBoard").style.backgroundColor = this.player1.color;
+					document.getElementById("player2ScoreBoard").style.backgroundColor = this.player2.color;
+					this.onWindowResize();
+					window.addEventListener( 'resize', () => this.onWindowResize(), false );
+				}
+
+				bodiesAreInContact(bodyA, bodyB){
+				    for(var i=0; i<this.world.contacts.length; i++){
+				        var c = this.world.contacts[i];
+				        if((c.bi === bodyA && c.bj === bodyB) || (c.bi === bodyB && c.bj === bodyA)){
+				            return true;
+				        }
+				    }
+				    return false;
+				}
+
+				animate(){
+					// step physics world
+					this.player1.grounded = this.bodiesAreInContact(this.player1.body, this.platform.body);
+					this.player2.grounded = this.bodiesAreInContact(this.player2.body, this.platform.body);
+					this.world.step(1.0/60.0);
+
+					// update visual
+					this.camera.animate();
+					this.player1.animate(this);
+					this.player2.animate(this);
+
+					//
+					this.updateGame();
+					
+
+					//render scene
+					this.renderer.render(this.scene, this.camera.camera);
+	            	requestAnimationFrame( () => this.animate() );
+				}
+
+				updateGame(){
+					if(this.player1.body.position.y < -5){
+						// increment opponents score
+						this.player2.score++;
+
+						// update score board
+						document.getElementById("player2ScoreBoard").innerText = this.player2.score;
+
+						// reset player position
+						this.player1.body.position = new CANNON.Vec3(-2.5, 5, 0);
+						this.player1.body.velocity = new CANNON.Vec3(0,0,0);
+						this.player1.body.angularVelocity = new CANNON.Vec3(0,0,0);
+					}
+
+					if(this.player2.body.position.y < -5){
+						// increment opponents score
+						this.player1.score++;
+
+						// update score board
+						document.getElementById("player1ScoreBoard").innerText = this.player1.score;
+
+						// reset player position
+						this.player2.body.position = new CANNON.Vec3(+2.5, 5, 0);
+						this.player2.body.velocity = new CANNON.Vec3(0,0,0);
+						this.player2.body.angularVelocity = new CANNON.Vec3(0,0,0);
+					}
+				}
+
+				onWindowResize(){
+					console.log("resize");
+					let width = this.element.offsetWidth;
+	            	let height = this.element.offsetHeight;
+		            this.camera.camera.aspect = width / height;
+		            this.camera.camera.updateProjectionMatrix();
+		            this.renderer.setSize( width, height );
+		        }
+			}
+
+			viewer = new Viewer(document.getElementById("container"));
+			viewer.animate();
+		</script>
+	</body>
+</html>
